@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False,   # GROQ_API_KEY and groq_api_key both work
-        extra="ignore",         # silently ignore unknown env vars
+        case_sensitive=False,
+        extra="ignore",
     )
 
     # ── LLM (required) ────────────────────────────────────────────────────────

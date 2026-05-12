@@ -180,8 +180,6 @@ async def health(vs: VectorStoreDep, engine: RAGEngineDep):
     }
 
 
-# ── Fix 4: Background upload — returns 202 immediately ───────────────────────
-
 @app.post("/upload", response_model=UploadAccepted, status_code=202, tags=["Documents"])
 def upload_document(
     background_tasks: BackgroundTasks,
@@ -206,7 +204,6 @@ def upload_document(
     stored_name = f"{doc_id}{ext}"
     save_path   = os.path.join(UPLOAD_DIR, stored_name)
 
-    # Save file synchronously (fast — just disk write)
     content = file.file.read()
     with open(save_path, "wb") as out:
         out.write(content)
@@ -229,15 +226,12 @@ async def upload_status(doc_id: str):
     """Poll indexing status for a recently uploaded document."""
     info = _upload_status.get(doc_id)
     if not info:
-        # Maybe it's already in the registry (server restart edge case)
         record = doc_registry.get_document(doc_id)
         if record:
             return StatusResponse(status="ready", message=f"Indexed {record['chunk_count']} chunks.")
         raise HTTPException(status_code=404, detail=f"No upload job found for doc_id='{doc_id}'.")
     return StatusResponse(status=info["status"], message=info["message"])
 
-
-# ── Fix 1: SSE Streaming endpoint ────────────────────────────────────────────
 
 @app.get("/ask/stream", tags=["Chat"])
 async def ask_stream(
@@ -272,7 +266,7 @@ async def ask_stream(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",   # disable nginx buffering for SSE
+            "X-Accel-Buffering": "no",
         },
     )
 

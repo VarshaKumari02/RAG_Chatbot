@@ -24,4 +24,4 @@ pydantic>=2.9.0
 python-dotenv>=1.0.0
 aiofiles>=24.0.0
 numpy>=1.26.0
-tenacity>=8.2.0          # retry logic for Groq API calls
+tenacity>=8.2.0
