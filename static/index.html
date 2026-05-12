@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAG Chatbot — AI Document Assistant</title>
+  <meta name="description"
+    content="Upload documents and chat with them using AI. Powered by Groq LLM and semantic search." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * {
+      font-family: 'Inter', sans-serif;
+    }
+
+    body {
+      background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+      min-height: 100vh;
+    }
+
+    /* ── Glassmorphism card ── */
+    .glass {
+      background: rgba(255, 255, 255, 0.07);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .glass-dark {
+      background: rgba(0, 0, 0, 0.25);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(139, 92, 246, 0.4);
+      border-radius: 10px;
+    }
+
+    /* ── Chat bubbles ── */
+    .bubble-user {
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      border-radius: 18px 18px 4px 18px;
+    }
+
+    .bubble-ai {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 18px 18px 18px 4px;
+    }
+
+    /* ── Drag-and-drop zone ── */
+    .drop-zone {
+      border: 2px dashed rgba(139, 92, 246, 0.4);
+      transition: all 0.25s ease;
+    }
+
+    .drop-zone.drag-over {
+      border-color: #8b5cf6;
+      background: rgba(139, 92, 246, 0.1);
+      transform: scale(1.01);
+    }
+
+    /* ── Pulsing status dot ── */
+    .dot-pulse {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.3;
+      }
+    }
+
+    /* ── Typing cursor ── */
+    .typing-cursor::after {
+      content: '▋';
+      animation: blink 0.8s step-end infinite;
+      color: #a78bfa;
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: 0
+      }
+    }
+
+    /* ── Progress bar ── */
+    .progress-bar {
+      background: linear-gradient(90deg, #7c3aed, #4f46e5, #06b6d4);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s linear infinite;
+    }
+
+    @keyframes shimmer {
+      0% {
+        background-position: 200% 0
+      }
+
+      100% {
+        background-position: -200% 0
+      }
+    }
+
+    /* ── Markdown inside bubbles ── */
+    .md-content h1,
+    .md-content h2,
+    .md-content h3 {
+      font-weight: 600;
+      margin-bottom: 0.4em;
+      color: #e2e8f0;
+    }
+
+    .md-content p {
+      margin-bottom: 0.5em;
+      line-height: 1.65;
+    }
+
+    .md-content ul,
+    .md-content ol {
+      padding-left: 1.4em;
+      margin-bottom: 0.5em;
+    }
+
+    .md-content li {
+      margin-bottom: 0.25em;
+    }
+
+    .md-content code {
+      background: rgba(139, 92, 246, 0.2);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-family: monospace;
+    }
+
+    .md-content pre {
+      background: rgba(0, 0, 0, 0.35);
+      padding: 0.75em 1em;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin-bottom: 0.6em;
+    }
+
+    .md-content pre code {
+      background: transparent;
+      padding: 0;
+    }
+
+    .md-content strong {
+      color: #f1f5f9;
+    }
+
+    .md-content blockquote {
+      border-left: 3px solid #7c3aed;
+      padding-left: 0.75em;
+      opacity: 0.85;
+      margin-bottom: 0.5em;
+    }
+
+    /* ── Source chips ── */
+    .source-chip {
+      background: rgba(139, 92, 246, 0.2);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+      font-size: 0.7rem;
+      border-radius: 20px;
+      padding: 2px 10px;
+    }
+
+    /* ── Send button glow ── */
+    #send-btn:not(:disabled):hover {
+      box-shadow: 0 0 20px rgba(139, 92, 246, 0.6);
+    }
+
+    /* ── Entrance animation ── */
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(16px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0)
+      }
+    }
+
+    .slide-up {
+      animation: slideUp 0.3s ease forwards;
+    }
+  </style>
+</head>
+
+<body class="flex items-center justify-center p-4 min-h-screen">
+
+  <div class="w-full max-w-6xl h-[92vh] flex gap-4">
+
+    <!-- ══════════════ LEFT SIDEBAR ══════════════ -->
+    <aside class="glass rounded-2xl w-80 flex-shrink-0 flex flex-col p-5 gap-4 overflow-hidden">
+
+      <!-- Logo -->
+      <div class="flex items-center gap-3 mb-1">
+        <div
+          class="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">
+          R</div>
+        <div>
+          <h1 class="text-white font-semibold text-sm leading-none">RAG Chatbot</h1>
+          <p class="text-violet-300 text-xs mt-0.5">AI Document Assistant</p>
+        </div>
+      </div>
+
+      <!-- Drop Zone -->
+      <div id="drop-zone" class="drop-zone rounded-xl p-5 text-center cursor-pointer flex flex-col items-center gap-2"
+        onclick="document.getElementById('file-input').click()">
+        <div class="w-10 h-10 rounded-full bg-violet-500/20 flex items-center justify-center">
+          <svg class="w-5 h-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+        </div>
+        <p class="text-white/70 text-xs leading-relaxed">
+          <span class="text-violet-400 font-medium">Click or drag & drop</span><br />
+          PDF, DOCX, TXT, PPTX, XLSX
+        </p>
+        <input id="file-input" type="file" class="hidden" accept=".pdf,.docx,.txt,.pptx,.xlsx" multiple />
+      </div>
+
+      <!-- Upload progress -->
+      <div id="upload-progress" class="hidden">
+        <div class="h-1 rounded-full bg-white/10 overflow-hidden">
+          <div class="progress-bar h-full rounded-full" style="width:100%"></div>
+        </div>
+        <p id="upload-msg" class="text-violet-300 text-xs mt-2 text-center">Indexing document…</p>
+      </div>
+
+      <!-- Document list -->
+      <div class="flex-1 overflow-y-auto min-h-0">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-white/50 text-xs uppercase tracking-wider font-medium">Documents</p>
+          <span id="doc-count" class="text-violet-400 text-xs font-medium">0</span>
+        </div>
+        <ul id="doc-list" class="space-y-2">
+          <li class="text-white/30 text-xs text-center py-4">No documents yet</li>
+        </ul>
+      </div>
+
+      <!-- Stats footer -->
+      <div class="glass-dark rounded-xl p-3 flex justify-between text-xs text-white/40 mt-auto">
+        <div class="text-center">
+          <p id="stat-chunks" class="text-violet-300 font-semibold text-sm">—</p>
+          <p>Chunks</p>
+        </div>
+        <div class="text-center">
+          <p id="stat-docs" class="text-violet-300 font-semibold text-sm">—</p>
+          <p>Docs</p>
+        </div>
+        <div class="text-center">
+          <div class="flex items-center gap-1 justify-center">
+            <div id="health-dot" class="w-2 h-2 rounded-full bg-gray-500"></div>
+            <p id="health-label" class="text-xs">—</p>
+          </div>
+          <p>Status</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ══════════════ MAIN CHAT ══════════════ -->
+    <main class="glass rounded-2xl flex-1 flex flex-col overflow-hidden">
+
+      <!-- Header -->
+      <header class="flex items-center justify-between px-6 py-4 border-b border-white/10">
+        <div>
+          <h2 class="text-white font-semibold">Chat</h2>
+          <p id="context-label" class="text-white/40 text-xs mt-0.5">Upload a document to begin</p>
+        </div>
+        <button id="clear-btn" onclick="clearHistory()"
+          class="glass-dark text-white/50 hover:text-white text-xs px-3 py-1.5 rounded-lg transition-all hover:border-violet-500/50"
+          title="Clear conversation history">
+          Clear history
+        </button>
+      </header>
+
+      <!-- Messages -->
+      <div id="chat-box" class="flex-1 overflow-y-auto p-6 space-y-5 min-h-0">
+        <!-- Welcome message -->
+        <div class="flex justify-center slide-up">
+          <div class="glass-dark rounded-2xl px-6 py-4 max-w-sm text-center">
+            <div class="text-3xl mb-2">🧠</div>
+            <p class="text-white/80 text-sm font-medium">Ready to answer questions</p>
+            <p class="text-white/40 text-xs mt-1">Upload a document from the sidebar, then start chatting.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input bar -->
+      <div class="px-6 pb-6 pt-3">
+        <div class="glass-dark rounded-2xl flex items-end gap-3 px-4 py-3">
+          <textarea id="question-input" rows="1" placeholder="Ask a question about your documents…"
+            class="flex-1 bg-transparent text-white placeholder-white/30 resize-none outline-none text-sm leading-relaxed max-h-32"
+            style="field-sizing:content" onkeydown="handleKey(event)"></textarea>
+          <button id="send-btn" onclick="sendQuestion()"
+            class="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center flex-shrink-0 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+            <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+            </svg>
+          </button>
+        </div>
+        <p class="text-white/20 text-xs text-center mt-2">Answers are generated from your uploaded documents only</p>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // ── State ─────────────────────────────────────────────────────────────────
+    const SESSION_ID = (() => {
+      let id = localStorage.getItem('rag_session_id');
+      if (!id) { id = crypto.randomUUID(); localStorage.setItem('rag_session_id', id); }
+      return id;
+    })();
+
+    let isStreaming = false;
+    let pollTimers = {};
+
+    // ── Marked.js config ──────────────────────────────────────────────────────
+    marked.setOptions({ breaks: true, gfm: true });
+
+    // ── DOM refs ──────────────────────────────────────────────────────────────
+    const chatBox = document.getElementById('chat-box');
+    const input = document.getElementById('question-input');
+    const sendBtn = document.getElementById('send-btn');
+    const docList = document.getElementById('doc-list');
+    const docCount = document.getElementById('doc-count');
+    const uploadProg = document.getElementById('upload-progress');
+    const uploadMsg = document.getElementById('upload-msg');
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    refreshHealth();
+    refreshDocuments();
+    setInterval(refreshHealth, 15000);
+
+    // ── Health check ──────────────────────────────────────────────────────────
+    async function refreshHealth() {
+      try {
+        const r = await fetch('/health');
+        if (!r.ok) throw new Error();
+        const d = await r.json();
+        document.getElementById('stat-chunks').textContent = d.total_chunks ?? '—';
+        document.getElementById('stat-docs').textContent = d.total_documents ?? '—';
+        document.getElementById('health-dot').className = 'w-2 h-2 rounded-full bg-emerald-400 dot-pulse';
+        document.getElementById('health-label').textContent = 'Online';
+        document.getElementById('health-label').className = 'text-xs text-emerald-400';
+        const ctx = document.getElementById('context-label');
+        ctx.textContent = d.total_chunks > 0
+          ? `${d.total_documents} doc${d.total_documents !== 1 ? 's' : ''} · ${d.total_chunks} chunks indexed`
+          : 'Upload a document to begin';
+      } catch {
+        document.getElementById('health-dot').className = 'w-2 h-2 rounded-full bg-red-400';
+        document.getElementById('health-label').textContent = 'Offline';
+      }
+    }
+
+    // ── Document list ─────────────────────────────────────────────────────────
+    async function refreshDocuments() {
+      try {
+        const r = await fetch('/documents');
+        if (!r.ok) return;
+        const docs = await r.json();
+        docCount.textContent = docs.length;
+        if (docs.length === 0) {
+          docList.innerHTML = '<li class="text-white/30 text-xs text-center py-4">No documents yet</li>';
+          return;
+        }
+        docList.innerHTML = docs.map(d => `
+          <li class="glass-dark rounded-xl px-3 py-2.5 flex items-start gap-2 group slide-up">
+            <div class="w-7 h-7 rounded-lg bg-violet-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span class="text-violet-400 text-xs">${fileIcon(d.original_name)}</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-white/80 text-xs font-medium truncate" title="${d.original_name}">${d.original_name}</p>
+              <p class="text-white/30 text-xs">${d.chunk_count} chunks</p>
+            </div>
+            <button onclick="deleteDoc('${d.doc_id}', this)"
+              class="opacity-0 group-hover:opacity-100 transition-opacity text-red-400/70 hover:text-red-400 p-0.5 flex-shrink-0"
+              title="Remove document">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </li>
+        `).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    function fileIcon(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      return { pdf: '📄', docx: '📝', txt: '📃', pptx: '📊', xlsx: '📈' }[ext] || '📁';
+    }
+
+    // ── Delete document ───────────────────────────────────────────────────────
+    async function deleteDoc(docId, btn) {
+      if (!confirm('Remove this document from the index?')) return;
+      btn.disabled = true;
+      const r = await fetch(`/documents/${docId}`, { method: 'DELETE' });
+      if (r.ok) { await refreshDocuments(); await refreshHealth(); }
+    }
+
+    // ── Drag-and-drop ─────────────────────────────────────────────────────────
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      [...e.dataTransfer.files].forEach(uploadFile);
+    });
+    fileInput.addEventListener('change', () => {
+      [...fileInput.files].forEach(uploadFile);
+      fileInput.value = '';
+    });
+
+    async function uploadFile(file) {
+      const fd = new FormData();
+      fd.append('file', file);
+      uploadProg.classList.remove('hidden');
+      uploadMsg.textContent = `Uploading ${file.name}…`;
+      try {
+        const r = await fetch('/upload', { method: 'POST', body: fd });
+        const d = await r.json();
+        if (!r.ok) {
+          uploadMsg.textContent = `${d.detail || 'Upload failed'}`;
+          setTimeout(() => uploadProg.classList.add('hidden'), 3000);
+          return;
+        }
+        // Poll for indexing completion
+        uploadMsg.textContent = `Indexing ${file.name}…`;
+        pollUploadStatus(d.doc_id, file.name);
+      } catch (e) {
+        uploadMsg.textContent = `Network error`;
+        setTimeout(() => uploadProg.classList.add('hidden'), 3000);
+      }
+    }
+
+    function pollUploadStatus(docId, name) {
+      if (pollTimers[docId]) clearInterval(pollTimers[docId]);
+      pollTimers[docId] = setInterval(async () => {
+        const r = await fetch(`/upload/status/${docId}`);
+        const d = await r.json();
+        if (d.status === 'ready') {
+          clearInterval(pollTimers[docId]);
+          delete pollTimers[docId];
+          uploadMsg.textContent = `${name} ready!`;
+          setTimeout(() => uploadProg.classList.add('hidden'), 2000);
+          await refreshDocuments();
+          await refreshHealth();
+        } else if (d.status === 'error') {
+          clearInterval(pollTimers[docId]);
+          uploadMsg.textContent = `${d.message}`;
+          setTimeout(() => uploadProg.classList.add('hidden'), 4000);
+        }
+      }, 1500);
+    }
+
+    // ── Chat ──────────────────────────────────────────────────────────────────
+    function handleKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+    }
+
+    function appendMessage(role, html, sources = []) {
+      const wrap = document.createElement('div');
+      wrap.className = `flex slide-up ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+
+      const bubble = document.createElement('div');
+      bubble.className = `max-w-[75%] px-4 py-3 text-sm text-white/90 ${role === 'user' ? 'bubble-user' : 'bubble-ai'}`;
+
+      if (role === 'user') {
+        bubble.textContent = html;
+      } else {
+        const md = document.createElement('div');
+        md.className = 'md-content';
+        md.innerHTML = marked.parse(html);
+        bubble.appendChild(md);
+
+        if (sources.length) {
+          const chips = document.createElement('div');
+          chips.className = 'flex flex-wrap gap-1 mt-2';
+          sources.forEach(s => {
+            const c = document.createElement('span');
+            c.className = 'source-chip text-violet-300';
+            c.textContent = '📎 ' + s;
+            chips.appendChild(c);
+          });
+          bubble.appendChild(chips);
+        }
+      }
+
+      wrap.appendChild(bubble);
+      chatBox.appendChild(wrap);
+      chatBox.scrollTop = chatBox.scrollHeight;
+      return bubble;
+    }
+
+    function appendThinking() {
+      const wrap = document.createElement('div');
+      wrap.className = 'flex justify-start slide-up';
+      wrap.id = 'thinking-indicator';
+      wrap.innerHTML = `
+        <div class="bubble-ai px-4 py-3 flex items-center gap-2">
+          <div class="flex gap-1">
+            <div class="w-2 h-2 rounded-full bg-violet-400 dot-pulse" style="animation-delay:0s"></div>
+            <div class="w-2 h-2 rounded-full bg-violet-400 dot-pulse" style="animation-delay:0.2s"></div>
+            <div class="w-2 h-2 rounded-full bg-violet-400 dot-pulse" style="animation-delay:0.4s"></div>
+          </div>
+          <span class="text-white/40 text-xs">Thinking…</span>
+        </div>`;
+      chatBox.appendChild(wrap);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function removeThinking() {
+      document.getElementById('thinking-indicator')?.remove();
+    }
+
+    async function sendQuestion() {
+      const q = input.value.trim();
+      if (!q || isStreaming) return;
+
+      appendMessage('user', q);
+      input.value = '';
+      input.style.height = 'auto';
+      isStreaming = true;
+      sendBtn.disabled = true;
+
+      appendThinking();
+
+      try {
+        const url = `/ask/stream?question=${encodeURIComponent(q)}&session_id=${SESSION_ID}`;
+        const es = new EventSource(url);
+
+        let aiBubble = null;
+        let mdDiv = null;
+        let rawText = '';
+        let sources = [];
+
+        es.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+
+          if (msg.type === 'sources') {
+            sources = msg.sources || [];
+            removeThinking();
+            // Create the AI bubble
+            const wrap = document.createElement('div');
+            wrap.className = 'flex justify-start slide-up';
+            aiBubble = document.createElement('div');
+            aiBubble.className = 'bubble-ai max-w-[75%] px-4 py-3 text-sm text-white/90';
+            mdDiv = document.createElement('div');
+            mdDiv.className = 'md-content typing-cursor';
+            aiBubble.appendChild(mdDiv);
+            wrap.appendChild(aiBubble);
+            chatBox.appendChild(wrap);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+          } else if (msg.type === 'token') {
+            rawText += msg.text;
+            mdDiv.innerHTML = marked.parse(rawText);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+          } else if (msg.type === 'done') {
+            mdDiv.classList.remove('typing-cursor');
+            // Append source chips
+            if (sources.length) {
+              const chips = document.createElement('div');
+              chips.className = 'flex flex-wrap gap-1 mt-2';
+              sources.forEach(s => {
+                const c = document.createElement('span');
+                c.className = 'source-chip text-violet-300';
+                c.textContent = '📎 ' + s;
+                chips.appendChild(c);
+              });
+              aiBubble.appendChild(chips);
+            }
+            es.close();
+            isStreaming = false;
+            sendBtn.disabled = false;
+            input.focus();
+          }
+        };
+
+        es.onerror = (err) => {
+          removeThinking();
+          es.close();
+          isStreaming = false;
+          sendBtn.disabled = false;
+          if (!aiBubble) {
+            appendMessage('ai', '⚠️ Could not connect to the server. Please try again.');
+          } else {
+            mdDiv.classList.remove('typing-cursor');
+          }
+        };
+
+      } catch (e) {
+        removeThinking();
+        appendMessage('ai', '⚠️ Unexpected error. Check the server logs.');
+        isStreaming = false;
+        sendBtn.disabled = false;
+      }
+    }
+
+    // ── Clear history ─────────────────────────────────────────────────────────
+    async function clearHistory() {
+      await fetch('/clear-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: SESSION_ID }),
+      });
+      chatBox.innerHTML = '';
+      appendMessage('ai', '🗑️ **Conversation history cleared.** Ask me anything about your documents.');
+    }
+  </script>
+</body>
+
+</html>

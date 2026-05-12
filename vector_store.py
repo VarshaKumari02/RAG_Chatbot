@@ -4,7 +4,11 @@ vector_store.py
 Manages:
   1. Generating embeddings via SentenceTransformers
   2. Storing/searching vectors with ChromaDB (persistent)
-  3. Per-document deletion support
+  3. Per-document deletion by UUID doc_id
+
+Document metadata (filenames, upload time, chunk counts) is intentionally
+stored in doc_registry.py (SQLite) rather than here. Fetching that info
+from ChromaDB required scanning every chunk's metadata — O(N) per listing.
 """
 
 import os
@@ -50,12 +54,14 @@ class VectorStore:
 
     # ── Indexing ──────────────────────────────────────────────────────────────
 
-    def add_chunks(self, chunks: List[Dict[str, Any]]) -> int:
+    def add_chunks(self, chunks: List[Dict[str, Any]], doc_id: str) -> int:
         """
         Embed and index a list of chunk dicts.
 
         Args:
             chunks: Output of document_processor.process_document()
+            doc_id: UUID from doc_registry — stored in each chunk's metadata
+                    so we can do O(1) targeted deletions later.
 
         Returns:
             Number of new chunks added.
@@ -63,45 +69,44 @@ class VectorStore:
         if not chunks:
             return 0
 
-        texts      = [c["text"]      for c in chunks]
-        sources    = [c["source"]    for c in chunks]
-        chunk_ids  = [c["chunk_id"]  for c in chunks]
+        texts     = [c["text"]     for c in chunks]
+        sources   = [c["source"]   for c in chunks]   # original filename (display)
+        chunk_ids = [c["chunk_id"] for c in chunks]
 
         print(f"[VectorStore] Embedding {len(texts)} chunks…")
         embeddings = self.model.encode(texts, show_progress_bar=True, batch_size=32)
         embeddings = [e.tolist() for e in embeddings]
 
-        # Build unique IDs: "<source>__<chunk_id>"
-        ids = [f"{src}__{cid}" for src, cid in zip(sources, chunk_ids)]
+        # Unique Chroma IDs: “<doc_id>__<chunk_id>”
+        ids = [f"{doc_id}__{cid}" for cid in chunk_ids]
 
         self.collection.add(
             ids=ids,
             embeddings=embeddings,
             documents=texts,
-            metadatas=[{"source": s, "chunk_id": c} for s, c in zip(sources, chunk_ids)],
+            metadatas=[
+                {"source": s, "chunk_id": c, "doc_id": doc_id}
+                for s, c in zip(sources, chunk_ids)
+            ],
         )
 
         print(f"[VectorStore] Indexed {len(chunks)} chunks. Total: {self.total_chunks}")
         return len(chunks)
 
-    def remove_source(self, source_name: str) -> bool:
+    def remove_by_doc_id(self, doc_id: str) -> int:
         """
-        Remove all chunks belonging to a particular source document.
+        Remove all chunks belonging to a particular document UUID.
 
         Returns:
-            True if source was found and removed, False otherwise.
+            Number of chunks deleted (0 if doc_id not found).
         """
-        if source_name not in self.sources:
-            return False
-
-        # Query all IDs for this source then delete them
-        results = self.collection.get(where={"source": source_name})
+        results = self.collection.get(where={"doc_id": doc_id})
         if results and results["ids"]:
             self.collection.delete(ids=results["ids"])
-            print(f"[VectorStore] Removed {len(results['ids'])} chunks for '{source_name}'.")
-            return True
-
-        return False
+            count = len(results["ids"])
+            print(f"[VectorStore] Removed {count} chunks for doc_id='{doc_id}'.")
+            return count
+        return 0
 
     # ── Retrieval ─────────────────────────────────────────────────────────────
 
@@ -138,21 +143,8 @@ class VectorStore:
 
         return chunks
 
-    # ── Info ──────────────────────────────────────────────────────────────────
+    # ── Info ──────────────────────────────────────────────────────────
 
     @property
     def total_chunks(self) -> int:
         return self.collection.count()
-
-    @property
-    def sources(self) -> List[str]:
-        """Return unique list of indexed source document names."""
-        if self.total_chunks == 0:
-            return []
-        all_meta = self.collection.get(include=["metadatas"])["metadatas"]
-        seen = []
-        for m in all_meta:
-            src = m.get("source", "")
-            if src and src not in seen:
-                seen.append(src)
-        return seen
